@@ -1,0 +1,6 @@
+devel_space: /home/hmc/Desktop/result_ws/devel
+install: false
+install_space: /home/hmc/Desktop/result_ws/install
+profile: default
+source_space: /home/hmc/Desktop/result_ws/src
+workspace: /home/hmc/Desktop/result_ws
