@@ -1,0 +1,4 @@
+<launch>
+    <param name="poseTopic" value="/mavros/local_position/pose"/>
+    <node pkg="makeResult" type="makeResult" name="makeResult" output="screen"/>
+</launch>
