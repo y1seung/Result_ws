@@ -133,7 +133,7 @@ class mapOptimizer{
             //How can we change under code for case of 2D
             pcl::getTranslationAndEulerAngles(correctionFrame, x, y, z, roll, pitch, yaw);
 
-            gtsam::Pose2 poseFrom = gtsam::Pose2(RELIATIVEPOSE);
+            gtsam::Pose2 poseFrom = gtsam::Pose2(0 ,0, M_PI); // Let's assume that we land at the very close position.
             gtsam::Pose2 poseTo = gtsam::Pose2(0, 0, 0); // From Scan Context Loop Closing Usage...
 
             gtSAMgraph.add(gtsam::BetweenFactor<gtsam::Pose2>(0,poseArray.size(),poseFrom.between(poseTo),robusNoiseModel));
