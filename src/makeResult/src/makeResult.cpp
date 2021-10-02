@@ -27,6 +27,7 @@ class mapOptimizer{
         ros::Publisher pubPath;
         ros::Publisher pubOptimizedPath;
         ros::Subscriber subNdtPose;
+        ros::Subscriber subLanding;
         
         gtsam::NonlinearFactorGraph gtSAMgraph;
         gtsam::Values initialEstimate;
@@ -56,9 +57,9 @@ class mapOptimizer{
             {
                 nh.param<std::string>("poseTopic", pose_topic, "/ndtpso_slam_node/pose_front");
                 pubPath = nh.advertise<nav_msgs::Path>("/resultPath",5);
-                pubOptimizedPath = nh.advertise<nav_msgs::Path>("resultOptimizedPath",5);
+                pubOptimizedPath = nh.advertise<nav_msgs::Path>("/resultOptimizedPath",5);
                 subNdtPose = nh.subscribe<geometry_msgs::PoseStamped>(pose_topic, 5, &mapOptimizer::poseHandler,this);
-                
+                subLanding = nh.subscribe<std_msgs::Bool<("/Landing",1, &mapOptimized::loopclosing,this);
                 init();
             }
 
@@ -121,8 +122,10 @@ class mapOptimizer{
             lastPose[2] = theta;
         }
 
-        void loopclosing()
-        {
+        void loopclosing(const std_msgs::BoolConstPtr& landing)
+        {   
+            if (landing->data)
+            {
             float noiseScore = 0.5;
             gtsam::Vector Vector3(3);
             Vector3 << noiseScore, noiseScore, noiseScore;
@@ -168,6 +171,7 @@ class mapOptimizer{
             gtSAMgraph.resize(0);
             isamCurrentEstimate = isam->calculateEstimate();
             updatePath(isamCurrentEstimate);
+            }
         }
 
         void updatePath(gtsam::Values optimized2DPoses)
