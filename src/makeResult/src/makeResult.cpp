@@ -184,7 +184,7 @@ class mapOptimizer{
             }
             pubOptimizedPath.publish(optimizedPath);
         }
-        
+
         void poseHandler(const geometry_msgs::PoseStampedConstPtr& ndt_pose)
         {
         // TODO 
@@ -197,14 +197,11 @@ class mapOptimizer{
 
 };
 
-mapOptimizer MO;
-
-
-
 int main(int argc, char** argv)
 {
     ros::init(argc, argv, "result_maker");
     ROS_INFO("<-------------------Result Maker Ready------------------->");
+    mapOptimizer MO;
     ros::Rate rate(200);
     while (ros::ok())
     {
