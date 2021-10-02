@@ -27,7 +27,7 @@ class mapOptimizer{
         ros::Publisher pubPath;
         ros::Publisher pubOptimizedPath;
         ros::Subscriber subNdtPose;
-
+        
         gtsam::NonlinearFactorGraph gtSAMgraph;
         gtsam::Values initialEstimate;
         gtsam::Values optimizedEstimate;
@@ -58,7 +58,7 @@ class mapOptimizer{
                 pubPath = nh.advertise<nav_msgs::Path>("/resultPath",5);
                 pubOptimizedPath = nh.advertise<nav_msgs::Path>("resultOptimizedPath",5);
                 subNdtPose = nh.subscribe<geometry_msgs::PoseStamped>(pose_topic, 5, &mapOptimizer::poseHandler,this);
-
+                
                 init();
             }
 
@@ -203,8 +203,9 @@ int main(int argc, char** argv)
     ROS_INFO("<-------------------Result Maker Ready------------------->");
     mapOptimizer MO;
     ros::Rate rate(200);
+    
     while (ros::ok())
-    {
+    {   
         ros::spinOnce();
         rate.sleep();
     }
@@ -212,3 +213,8 @@ int main(int argc, char** argv)
     return 0;
 }
 
+//TODO
+//1. Get the corresponding frame detecting object
+//2. Classify with class name
+//3. filtering its poses
+//4. make a text file
