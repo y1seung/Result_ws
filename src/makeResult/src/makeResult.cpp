@@ -47,7 +47,7 @@ class mapOptimizer{
         bool loopDetected;
         bool isInit = false;
 
-        float startPoint[3] = {0.2, 0.2, 3*M_PI/2};
+        float startPoint[3] = {0.2, 0.2, 3*M_PI/4};
         
 
     public:
@@ -73,8 +73,8 @@ class mapOptimizer{
             priorNoise = gtsam::noiseModel::Diagonal::Variances(Vector3);
             odometryNoise = gtsam::noiseModel::Diagonal::Variances(Vector3);
 
-            gtSAMgraph.add(gtsam::PriorFactor<gtsam::Pose2>(0, gtsam::Pose2(startPoint[0],startPoint[1],startPoint[2])),priorNoise);
-            initialEstimate.insert(0,gtsam::Pose2(0.2,0.2,PI/2));
+            gtSAMgraph.add(gtsam::PriorFactor<gtsam::Pose2>(0, gtsam::Pose2(startPoint[0],startPoint[1],startPoint[2]),priorNoise));
+            initialEstimate.insert(0,gtsam::Pose2(startPoint[0],startPoint[1],startPoint[2]));
 
             isam->update(gtSAMgraph, initialEstimate);
             isam->update();
@@ -159,7 +159,7 @@ class mapOptimizer{
             pcl::getTranslationAndEulerAngles(correctionFrame, x, y, z, roll, pitch, yaw);
             */
 
-            gtsam::Pose2 poseFrom = gtsam::Pose2(0 ,0, M_PI); // Let's assume that we land at the very close position.
+            gtsam::Pose2 poseFrom = gtsam::Pose2(0.2 ,0.2, -M_PI/4); // Let's assume that we land at the very close position.
             gtsam::Pose2 poseTo = gtsam::Pose2(0, 0, 0); // From Scan Context Loop Closing Usage...
 
             gtSAMgraph.add(gtsam::BetweenFactor<gtsam::Pose2>(0,path.poses.size(),poseFrom.between(poseTo),robusNoiseModel));
@@ -167,7 +167,7 @@ class mapOptimizer{
             isam->update();
             gtSAMgraph.resize(0);
             isamCurrentEstimate = isam->calculateEstimate();
-            updatePath(isamCurrentEstimate)
+            updatePath(isamCurrentEstimate);
         }
 
         void updatePath(gtsam::Values optimized2DPoses)
@@ -178,8 +178,8 @@ class mapOptimizer{
                 geometry_msgs::PoseStamped tmpPose;
                 tmpPose= path.poses[i];
                 gtsam::Pose2 optimized2DPose = optimized2DPoses.at<gtsam::Pose2>(i);
-                tmpPose.position.x = optimized2DPose.translation.x();
-                tmpPose.position.y = optimized2DPose.translation.y();
+                tmpPose.pose.position.x = optimized2DPose.translation().x();
+                tmpPose.pose.position.y = optimized2DPose.translation().y();
                 optimizedPath.poses.push_back(tmpPose);
             }
             pubOptimizedPath.publish(optimizedPath);
