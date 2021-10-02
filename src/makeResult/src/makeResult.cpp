@@ -16,10 +16,18 @@
 
 #include <ros/ros.h>
 #include "geometry_msgs/PoseStamped.h"
+#include "nav_msgs/Path.h"
 
 class mapOptimizer{
     
     private:
+        ros::NodeHandle nh;
+        std::string pose_topic;
+
+        ros::Publisher pubPath;
+        ros::Publisher pubOptimizedPath;
+        ros::Subscriber subNdtPose;
+
         gtsam::NonlinearFactorGraph gtSAMgraph;
         gtsam::Values initialEstimate;
         gtsam::Values optimizedEstimate;
@@ -31,8 +39,10 @@ class mapOptimizer{
         gtsam::noiseModel::Diagonal::shared_ptr constraintNoise;
         gtsam::noiseModel::Base::shared_ptr robusNoiseModel;
         gtsam::ISAM2Params parameters;
-        std::vector<geometry_msgs::PoseStamped> poseArray;
     
+        nav_msgs::Path path;
+        nav_msgs::Path optimizedPath;
+
         float lastPose[3];
         bool loopDetected;
         bool isInit = false;
@@ -41,6 +51,17 @@ class mapOptimizer{
         
 
     public:
+        mapOptimizer():
+            nh("~")
+            {
+                nh.param<std::string>("poseTopic", pose_topic, "/ndtpso_slam_node/pose_front");
+                pubPath = nh.advertise<nav_msgs::Path>("/resultPath",5);
+                pubOptimizedPath = nh.advertise<nav_msgs::Path>("resultOptimizedPath",5);
+                subNdtPose = nh.subscribe<geometry_msgs::PoseStamped>(pose_topic, 5, &mapOptimizer::poseHandler,this);
+
+                init();
+            }
+
         void init()
         {   
             parameters.relinearizeThreshold = 0.01;
@@ -73,23 +94,26 @@ class mapOptimizer{
         void addNode(const geometry_msgs::PoseStampedConstPtr& ndt_pose)
         {
             geometry_msgs::PoseStamped pose;
+            path.header = ndt_pose->header;
             pose.header = ndt_pose->header;
             pose.pose = ndt_pose->pose;
             float theta = std::atan2(2 * (pose.pose.orientation.w*pose.pose.orientation.z + pose.pose.orientation.x*pose.pose.orientation.y),(1 - 2 * (pose.pose.orientation.y * pose.pose.orientation.y + pose.pose.orientation.z * pose.pose.orientation.z)));
             //need to align coordinate between map and base_link
             if(isInit)
             {
-                poseArray.push_back(pose);
+
+                path.poses.push_back(pose);
                 gtsam::Pose2 poseFrom = gtsam::Pose2(lastPose[0], lastPose[1], lastPose[2]);
                 gtsam::Pose2 poseTo = gtsam::Pose2(pose.pose.position.x, pose.pose.position.y, theta);
-                gtSAMgraph.add(gtsam::BetweenFactor<gtsam::Pose2>(poseArray.size()-1, poseArray.size(), poseFrom.between(poseTo), odometryNoise));
-                initialEstimate.insert(poseArray.size(),poseTo);
+                gtSAMgraph.add(gtsam::BetweenFactor<gtsam::Pose2>(path.poses.size()-1, path.poses.size(), poseFrom.between(poseTo), odometryNoise));
+                initialEstimate.insert(path.poses.size(),poseTo);
 
                 isam->update(gtSAMgraph, initialEstimate);
                 isam->update();
                 gtSAMgraph.resize(0);
                 initialEstimate.clear();
                 isam->calculateEstimate();
+                pubPath.publish(path);
             }
             //Need update last pose
             lastPose[0] = pose.pose.position.x;
@@ -138,36 +162,49 @@ class mapOptimizer{
             gtsam::Pose2 poseFrom = gtsam::Pose2(0 ,0, M_PI); // Let's assume that we land at the very close position.
             gtsam::Pose2 poseTo = gtsam::Pose2(0, 0, 0); // From Scan Context Loop Closing Usage...
 
-            gtSAMgraph.add(gtsam::BetweenFactor<gtsam::Pose2>(0,poseArray.size(),poseFrom.between(poseTo),robusNoiseModel));
+            gtSAMgraph.add(gtsam::BetweenFactor<gtsam::Pose2>(0,path.poses.size(),poseFrom.between(poseTo),robusNoiseModel));
             isam->update(gtSAMgraph);
             isam->update();
             gtSAMgraph.resize(0);
+            isamCurrentEstimate = isam->calculateEstimate();
+            updatePath(isamCurrentEstimate)
+        }
+
+        void updatePath(gtsam::Values optimized2DPoses)
+        {
+            optimizedPath.header = path.header;
+            for (int i=0; i<path.poses.size(); i++)
+            {
+                geometry_msgs::PoseStamped tmpPose;
+                tmpPose= path.poses[i];
+                gtsam::Pose2 optimized2DPose = optimized2DPoses.at<gtsam::Pose2>(i);
+                tmpPose.position.x = optimized2DPose.translation.x();
+                tmpPose.position.y = optimized2DPose.translation.y();
+                optimizedPath.poses.push_back(tmpPose);
+            }
+            pubOptimizedPath.publish(optimizedPath);
+        }
+        
+        void poseHandler(const geometry_msgs::PoseStampedConstPtr& ndt_pose)
+        {
+        // TODO 
+        // 1. Transformation Matrix : we need a transformation matrix between 'lidar and camera' or other matrix that can tell us about tf between lidar and camera
+        // 2. Keyframe Selection : Now we use all poses from ndt_pso to build a pose graph, but later maybe we need to select the key poses to reduce the number of the pose_nodes.
+
+        // build a pose graph. try to use same way the SC_LEGO_LOAM use.
+            addNode(ndt_pose);
         }
 
 };
 
 mapOptimizer MO;
 
-void poseHandler(const geometry_msgs::PoseStampedConstPtr& ndt_pose)
-{
-// TODO 
-// 1. Transformation Matrix : we need a transformation matrix between 'lidar and camera' or other matrix that can tell us about tf between lidar and camera
-// 2. Keyframe Selection : Now we use all poses from ndt_pso to build a pose graph, but later maybe we need to select the key poses to reduce the number of the pose_nodes.
 
-// build a pose graph. try to use same way the SC_LEGO_LOAM use.
-    MO.addNode(ndt_pose);
-}
 
 int main(int argc, char** argv)
 {
     ros::init(argc, argv, "result_maker");
     ROS_INFO("<-------------------Result Maker Ready------------------->");
-
-    ros::NodeHandle nh;
-    std::string pose_topic;
-    
-    nh.param<std::string>("poseTopic", pose_topic, "/ndtpso_slam_node/pose_front");
-    ros::Subscriber subNdtPose = nh.subscribe<geometry_msgs::PoseStamped>(pose_topic,5, poseHandler);
     ros::Rate rate(200);
     while (ros::ok())
     {
