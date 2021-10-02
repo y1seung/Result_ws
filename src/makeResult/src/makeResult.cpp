@@ -111,6 +111,7 @@ class mapOptimizer{
             
             // this code assume that we should be on the "H" marker, not only starting time but also ending time. 
             // May need a check that it works well, there will be too many node in the starting point...
+            /*
             pcl::IterativeClosestPoint<pcl::PointXY,pcl::PointXY> icp;
             icp.setMaxCorrespondenceDistance(100);
             icp.setMaximumIterations(100);
@@ -132,6 +133,7 @@ class mapOptimizer{
             Eigen::MatrixXf correctionFrame = icp.getFinalTransformation();
             //How can we change under code for case of 2D
             pcl::getTranslationAndEulerAngles(correctionFrame, x, y, z, roll, pitch, yaw);
+            */
 
             gtsam::Pose2 poseFrom = gtsam::Pose2(0 ,0, M_PI); // Let's assume that we land at the very close position.
             gtsam::Pose2 poseTo = gtsam::Pose2(0, 0, 0); // From Scan Context Loop Closing Usage...
