@@ -8,6 +8,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   pcl_ros
   nav_msgs
+  tf
 )
 
 find_package(GTSAM REQUIRED QUIET)
