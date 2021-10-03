@@ -1,6 +1,8 @@
 #define _USE_MATH_DEFINES
 
 #include <cmath>
+#include <map>
+#include <fstream>
 #include <gtsam/geometry/Rot2.h>
 #include <gtsam/geometry/Pose2.h>
 #include <gtsam/slam/PriorFactor.h>
@@ -15,8 +17,14 @@
 #include <pcl/registration/icp.h>
 
 #include <ros/ros.h>
+#include "std_msgs/Bool.h"
 #include "geometry_msgs/PoseStamped.h"
+#include "geometry_msgs/Point.h"
+#include "geometry_msgs/Pose.h"
 #include "nav_msgs/Path.h"
+#include "tf/tf.h"
+#include "tf/transform_datatypes.h"
+#include "Quaternion.h"
 
 class mapOptimizer{
     
@@ -27,6 +35,7 @@ class mapOptimizer{
         ros::Publisher pubPath;
         ros::Publisher pubOptimizedPath;
         ros::Subscriber subNdtPose;
+        ros::Subscriber subObject;
         ros::Subscriber subLanding;
         
         gtsam::NonlinearFactorGraph gtSAMgraph;
@@ -50,6 +59,7 @@ class mapOptimizer{
 
         float startPoint[3] = {0.2, 0.2, 3*M_PI/4};
         
+        std::map<std::string, std::map> object_map;
 
     public:
         mapOptimizer():
@@ -59,7 +69,8 @@ class mapOptimizer{
                 pubPath = nh.advertise<nav_msgs::Path>("/resultPath",5);
                 pubOptimizedPath = nh.advertise<nav_msgs::Path>("/resultOptimizedPath",5);
                 subNdtPose = nh.subscribe<geometry_msgs::PoseStamped>(pose_topic, 5, &mapOptimizer::poseHandler,this);
-                subLanding = nh.subscribe<std_msgs::Bool<("/Landing",1, &mapOptimized::loopclosing,this);
+                subLanding = nh.subscribe<std_msgs::Bool<("/Landing",1, &mapOptimizer::loopclosing,this);
+                subObject = nh.subscribe<geometry_msgs::PoseStamped>("/detectedObject", 5, &mapOptimizer::objectHandler,this);
                 init();
             }
 
@@ -70,18 +81,18 @@ class mapOptimizer{
             isam = new gtsam::ISAM2(parameters);
 
             gtsam::Vector Vector3(3);
-            Vector3 << 1e-6, 1e-6, 1e-6;
+            Vector3 << 0.5, 0.5, 0.5;
             priorNoise = gtsam::noiseModel::Diagonal::Variances(Vector3);
             odometryNoise = gtsam::noiseModel::Diagonal::Variances(Vector3);
 
             gtSAMgraph.add(gtsam::PriorFactor<gtsam::Pose2>(0, gtsam::Pose2(startPoint[0],startPoint[1],startPoint[2]),priorNoise));
             initialEstimate.insert(0,gtsam::Pose2(startPoint[0],startPoint[1],startPoint[2]));
 
-            isam->update(gtSAMgraph, initialEstimate);
-            isam->update();
-            gtSAMgraph.resize(0);
-            initialEstimate.clear();
-            isam->calculateEstimate();
+            // isam->update(gtSAMgraph, initialEstimate);
+            // isam->update();
+            // gtSAMgraph.resize(0);
+            // initialEstimate.clear();
+            // isam->calculateEstimate();
 
             for (int i = 0; i < 3; i++)
             {
@@ -109,12 +120,12 @@ class mapOptimizer{
                 gtSAMgraph.add(gtsam::BetweenFactor<gtsam::Pose2>(path.poses.size()-1, path.poses.size(), poseFrom.between(poseTo), odometryNoise));
                 initialEstimate.insert(path.poses.size(),poseTo);
 
-                isam->update(gtSAMgraph, initialEstimate);
-                isam->update();
-                gtSAMgraph.resize(0);
-                initialEstimate.clear();
-                isam->calculateEstimate();
-                pubPath.publish(path);
+                // isam->update(gtSAMgraph, initialEstimate);
+                // isam->update();
+                // gtSAMgraph.resize(0);
+                // initialEstimate.clear();
+                // isam->calculateEstimate();
+                // pubPath.publish(path);
             }
             //Need update last pose
             lastPose[0] = pose.pose.position.x;
@@ -126,7 +137,7 @@ class mapOptimizer{
         {   
             if (landing->data)
             {
-            float noiseScore = 0.5;
+            float noiseScore = 1e-6;
             gtsam::Vector Vector3(3);
             Vector3 << noiseScore, noiseScore, noiseScore;
             constraintNoise = gtsam::noiseModel::Diagonal::Variances(Vector3);
@@ -165,7 +176,8 @@ class mapOptimizer{
             gtsam::Pose2 poseFrom = gtsam::Pose2(0.2 ,0.2, -M_PI/4); // Let's assume that we land at the very close position.
             gtsam::Pose2 poseTo = gtsam::Pose2(0, 0, 0); // From Scan Context Loop Closing Usage...
 
-            gtSAMgraph.add(gtsam::BetweenFactor<gtsam::Pose2>(0,path.poses.size(),poseFrom.between(poseTo),robusNoiseModel));
+            isam->update(gtSAMgraph, initialEstimate);
+            gtSAMgraph.add(gtsam::BetweenFactor<gtsam::Pose2>(path.poses.size(),0,poseFrom.between(poseTo),constraintNoise));
             isam->update(gtSAMgraph);
             isam->update();
             gtSAMgraph.resize(0);
@@ -199,6 +211,75 @@ class mapOptimizer{
             addNode(ndt_pose);
         }
 
+        void objectHandler(const geometry_msgs::PoseStampedConstPtr& object_pose)
+        {
+            if (object_map.find(object_pose->header.frame_id) == object_map.end() || object_map.empty())
+            {
+                std::map<uint32_t,geometry_msgs::Point> map1;
+                map1[object_pose->header.seq] = object_pose->pose.position;
+                object_map[object_pose->header.frame_id] = map1;
+            }
+            else
+            {
+                object_map[object_pose->header.frame_id][object_pose->header.seq] = object_pose->pose.position;
+            }
+        }
+
+        void matchingPose()
+        {
+            for (std::map<std::string, std::map>::iterator IterMap = object_map.begin(); IterMap!=object_map.end(); ++IterMap)
+            {
+            // for each class_id -> calculate all poses.
+                std::vector<geometry_msgs::Point> collectedPose;
+                for (std::map<uint32_t, geometry_msgs::Point>::iterator IterPose = IterMap->second.begin(); IterPose!=IterMap->second.end(); ++IterPose)
+                {
+                //for each seq and pose ->  calculate the object's pose in world coordinate.
+
+                    if (IterPose->first > optimizedPath.poses[0].header.seq)
+                    {
+                        uint32_t seqDiff = IterPose->first - optimizedPath.poses[0].header.seq;
+                        geometry_msgs::Pose map2basePose = optimizedPath.poses[static_cast<int>(seqDiff)].pose;
+                        std::cout << "Check we match right corresponding poses   " << IterPose->first << " == " << optimizedPath.poses[static_cast<int>(seqDiff)].header.seq << " ?" << std::endl;
+                        
+                        tf::Quaternion quat_tf;
+                        tf::quaternionMsgToTF(map2basePose.orientation , quat_tf);    
+                        tf::Matrix3x3 rotBase2Map(map2basePose.orientation);
+                        tf::Point pose_tf;
+                        tf::pointMsgToTF(IterPose->second, pose_tf);
+                        tf::Point transformedPose = rosBase2Map.transpose() * pose_tf;
+                        
+                        geometry_msgs::Point finalPose;
+                        finalPose.x = transformedPose.x + map2basePose.position.x;
+                        finalPose.y = transformedPose.y + map2basePose.position.y;
+                        finalPose.z = transformedPose.z + map2basePose.position.z;
+                        
+                        collectedPose.push_back(finalPose);
+
+                    }
+                    else
+                    {
+                        std::cout << "The detected scene is not in the pose graph, so pass this scene..." << std::endl;
+                    }
+                    
+                }
+                selectBestPose(Itermap->first, collectedPose);
+            }
+        }
+
+        void selectBestPose(std::string class_name, std::vector<geometry_msgs::Point> Poses)
+        {
+            // Now just write txt file...
+            std::ofstream txt_file(class_name.append(".txt"), std::ios::trunc);
+            if (txt_file.is_open())
+            {
+                for (std::vector<geometry_msgs::Point>::iterator Iter = Poses.begin(); Iter!=Poses.end(); ++Iter)
+                {
+                    text_file << std::to_string(Poses.x) << " " << std::to_string(Poses.y) << " " << std::to_string(Poses.z) << std::endl;
+                }
+                txt_file.close();
+            }
+        }
+
 };
 
 int main(int argc, char** argv)
@@ -221,4 +302,4 @@ int main(int argc, char** argv)
 //1. Get the corresponding frame detecting object
 //2. Classify with class name
 //3. filtering its poses
-//4. make a text file
+//4. make a text
