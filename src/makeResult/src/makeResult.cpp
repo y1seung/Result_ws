@@ -24,7 +24,7 @@
 #include "nav_msgs/Path.h"
 #include "tf/tf.h"
 #include "tf/transform_datatypes.h"
-#include "Quaternion.h"
+#include "tf/Quaternion.h"
 
 class mapOptimizer{
     
@@ -56,10 +56,11 @@ class mapOptimizer{
         float lastPose[3];
         bool loopDetected;
         bool isInit = false;
+        bool getTopic = true;
 
         float startPoint[3] = {0.2, 0.2, 3*M_PI/4};
         
-        std::map<std::string, std::map> object_map;
+        std::map<std::string, std::map<uint32_t,geometry_msgs::Point>> object_map;
 
     public:
         mapOptimizer():
@@ -69,7 +70,7 @@ class mapOptimizer{
                 pubPath = nh.advertise<nav_msgs::Path>("/resultPath",5);
                 pubOptimizedPath = nh.advertise<nav_msgs::Path>("/resultOptimizedPath",5);
                 subNdtPose = nh.subscribe<geometry_msgs::PoseStamped>(pose_topic, 5, &mapOptimizer::poseHandler,this);
-                subLanding = nh.subscribe<std_msgs::Bool<("/Landing",1, &mapOptimizer::loopclosing,this);
+                subLanding = nh.subscribe<std_msgs::Bool>("/Landing",1, &mapOptimizer::loopclosing,this);
                 subObject = nh.subscribe<geometry_msgs::PoseStamped>("/detectedObject", 5, &mapOptimizer::objectHandler,this);
                 init();
             }
@@ -199,6 +200,7 @@ class mapOptimizer{
                 optimizedPath.poses.push_back(tmpPose);
             }
             pubOptimizedPath.publish(optimizedPath);
+            matchingPose();
         }
 
         void poseHandler(const geometry_msgs::PoseStampedConstPtr& ndt_pose)
@@ -227,7 +229,7 @@ class mapOptimizer{
 
         void matchingPose()
         {
-            for (std::map<std::string, std::map>::iterator IterMap = object_map.begin(); IterMap!=object_map.end(); ++IterMap)
+            for (std::map<std::string, std::map<uint32_t, geometry_msgs::Point>>::iterator IterMap = object_map.begin(); IterMap!=object_map.end(); ++IterMap)
             {
             // for each class_id -> calculate all poses.
                 std::vector<geometry_msgs::Point> collectedPose;
@@ -243,15 +245,15 @@ class mapOptimizer{
                         
                         tf::Quaternion quat_tf;
                         tf::quaternionMsgToTF(map2basePose.orientation , quat_tf);    
-                        tf::Matrix3x3 rotBase2Map(map2basePose.orientation);
+                        tf::Matrix3x3 rotBase2Map(quat_tf);
                         tf::Point pose_tf;
                         tf::pointMsgToTF(IterPose->second, pose_tf);
-                        tf::Point transformedPose = rosBase2Map.transpose() * pose_tf;
+                        tf::Point transformedPose = rotBase2Map.transpose() * pose_tf;
                         
                         geometry_msgs::Point finalPose;
-                        finalPose.x = transformedPose.x + map2basePose.position.x;
-                        finalPose.y = transformedPose.y + map2basePose.position.y;
-                        finalPose.z = transformedPose.z + map2basePose.position.z;
+                        finalPose.x = transformedPose.x() + map2basePose.position.x;
+                        finalPose.y = transformedPose.y() + map2basePose.position.y;
+                        finalPose.z = transformedPose.z() + map2basePose.position.z;
                         
                         collectedPose.push_back(finalPose);
 
@@ -262,7 +264,7 @@ class mapOptimizer{
                     }
                     
                 }
-                selectBestPose(Itermap->first, collectedPose);
+                selectBestPose(IterMap->first, collectedPose);
             }
         }
 
@@ -274,7 +276,7 @@ class mapOptimizer{
             {
                 for (std::vector<geometry_msgs::Point>::iterator Iter = Poses.begin(); Iter!=Poses.end(); ++Iter)
                 {
-                    text_file << std::to_string(Poses.x) << " " << std::to_string(Poses.y) << " " << std::to_string(Poses.z) << std::endl;
+                    txt_file << std::to_string(Iter->x) << " " << std::to_string(Iter->y) << " " << std::to_string(Iter->z) << std::endl;
                 }
                 txt_file.close();
             }
